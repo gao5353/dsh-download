@@ -1,0 +1,66 @@
+{
+  "name": "dsh-download",
+  "version": "2.0.0",
+  "private": true,
+  "description": "DeepSeek Harness plugin: a download_file tool that awaits the transfer inside one tool call, so waiting costs no tokens. Built-in segmented engine, resumable downloads, and a progress panel under Settings.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./engine-builtin.js": "./lib/engine-builtin.js",
+    "./status.js": "./lib/status.js",
+    "./ui-routes.js": "./lib/ui-routes.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/engine-builtin.js",
+    "lib/status.js",
+    "lib/ui-routes.js",
+    "cordis.patch.yml",
+    "README.md",
+    "README.txt",
+    "INTRODUCTION.md",
+    "INSTALL.md",
+    "LICENSE",
+    "install.cmd",
+    "install.ps1",
+    "uninstall.cmd",
+    "uninstall.ps1",
+    "settings.cmd",
+    "settings.ps1"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "download",
+    "downloader",
+    "resumable-download",
+    "neat-download-manager"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GAO5353/dsh-download.git"
+  },
+  "homepage": "https://github.com/GAO5353/dsh-download#readme",
+  "bugs": {
+    "url": "https://github.com/GAO5353/dsh-download/issues"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  }
+}

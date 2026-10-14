@@ -1,0 +1,13 @@
+# dsh-download — bundle patch layer.
+#
+# One row: the download_file tool. It publishes no service, so it sits loose
+# (no isolate realm) and simply consumes the host `tools` registry.
+#
+# No config keys are set on purpose, so this exact file works on any machine:
+# the plugin auto-detects the NeatDM.exe path, the download directory and the
+# 1 GiB routing threshold. To override any of them, add a `config:` block here
+# (see README.md for the keys and their defaults).
+
+- insert:
+    - id: tool-dsh-download
+      name: dsh-download

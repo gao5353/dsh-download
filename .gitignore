@@ -1,0 +1,28 @@
+# Files that belong to a machine or to a build, never to the repository.
+
+# This plugin's own runtime state, written beside the user's dsh home. A status file in particular
+# records every URL someone has downloaded, so it must never be committed.
+dsh-download.settings.json
+dsh-download.status.json
+
+# In-flight transfer artefacts. These only exist next to a download while it is resumable.
+*.part
+*.part.json
+*.part.json.tmp
+
+# Build output of pack-plugin.mjs.
+dist/
+
+# Installer backups, created before this repo's own installer touches a dsh profile.
+_backup-*
+
+node_modules/
+*.log
+npm-debug.log*
+
+# Editors and operating systems.
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/

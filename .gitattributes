@@ -1,0 +1,27 @@
+# Line endings are a correctness concern in this repository, not a style preference.
+#
+# Every file here was verified on Windows in the byte shape listed below. A clone on a machine with
+# a different `core.autocrlf` must produce the same bytes, or the installer stops being the thing
+# that was tested — a batch file that gains LF endings is a batch file nobody ran.
+
+# Default: LF in the repository and in the working tree. This matches the shell scripts, the
+# JavaScript, the JSON and the Markdown as they were tested.
+* text=auto eol=lf
+
+# Batch files are the entry point a user double-clicks, so they stay CRLF on every platform.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# The plain-text quick start is meant to be opened by Notepad from the extracted folder.
+*.txt text eol=crlf
+
+# PowerShell scripts keep whatever they are committed with; the UTF-8 BOM that Windows PowerShell
+# 5.1 needs to read them is part of the committed blob and is never stripped by these rules.
+*.ps1 text
+
+# Already-compressed or generated payloads: never touched.
+*.zip binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary

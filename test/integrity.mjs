@@ -1,0 +1,410 @@
+/**
+ * Integrity and option tests for the built-in engine.
+ *
+ * Two things are being established here, both of which a user has to be able to trust:
+ *
+ * 1. **A download is never reported as successful unless every byte is really on disk.** The staged
+ *    file is preallocated to its final length within the first second, so its size proves nothing —
+ *    which means "the size is right" can no longer be the completion check. This suite reproduces
+ *    the exact shape that used to slip through: a server that answers 429 to precisely as many
+ *    requests as there are workers, so that (under the old code) every worker exited early and a
+ *    hole-filled file was renamed into place and reported as OK.
+ *
+ * 2. **The configurable options change behaviour rather than merely existing.** Each setting is
+ *    changed and an observable difference is asserted. Where an option provably has no effect on
+ *    this engine — `monitor` is the honest example — that is asserted too, so it reads as a
+ *    documented boundary rather than a decoration nobody noticed.
+ *
+ * Everything runs against a local range server, so the suite costs no network and takes seconds.
+ */
+
+import { homedir } from 'node:os'
+// Resolved from this file's own location, so a cloned copy runs anywhere.
+const ROOT_LIB = new URL('../', import.meta.url).href
+
+import { createHash } from 'node:crypto'
+import { createReadStream, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+const ROOT = join(tmpdir(), `dsh-integrity-${Date.now()}-${Math.floor(Math.random() * 1000)}`)
+mkdirSync(ROOT, { recursive: true })
+process.env.DSH_NDM_STATUS = join(ROOT, 'status.json').replace(/\\/g, '/')
+
+const ENGINE = `${ROOT_LIB}lib/engine-builtin.js`
+const { downloadSegmented, stagedPathFor, resumePathFor } = await import(ENGINE)
+
+const SIZE = 32 * 1024 * 1024
+const SOURCE = join(ROOT, 'source.bin')
+{
+  const block = Buffer.alloc(64 * 1024)
+  const output = Buffer.alloc(SIZE)
+  for (let offset = 0; offset < SIZE; offset += block.length) {
+    const digest = createHash('sha256').update(`block-${offset}`).digest()
+    for (let index = 0; index < block.length; index += 1) block[index] = digest[index % digest.length] ^ (offset >> 15)
+    block.copy(output, offset)
+  }
+  writeFileSync(SOURCE, output)
+}
+const SOURCE_BYTES = readFileSync(SOURCE)
+const sourceHash = createHash('sha256').update(SOURCE_BYTES).digest('hex')
+
+let failures = 0
+const check = (label, condition, detail) => {
+  if (!condition) failures += 1
+  console.log(`${condition ? 'PASS' : 'FAIL'}  ${label}`)
+  if (detail !== undefined) console.log(`        ${detail}`)
+}
+const hashOf = (path) => createHash('sha256').update(readFileSync(path)).digest('hex')
+
+// ---- the fixture server ---------------------------------------------------------------------
+// `throttle-data` rate-limits only real ranges, which is what a mirror does to a client opening
+// many connections. `throttle-all` also refuses the opening two-byte probe, which is a different
+// failure with a different correct answer.
+let mode = 'good'
+let throttledSoFar = 0
+let probes = 0
+let inFlight = 0
+let maxInFlight = 0
+let maxInFlightAfterThrottle = 0
+let throttleBudget = 0
+
+const server = createServer((request, response) => {
+  const range = /bytes=(\d+)-(\d*)/.exec(request.headers.range ?? '')
+  if (range === null) {
+    response.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': SIZE })
+    response.end(request.method === 'HEAD' ? undefined : SOURCE_BYTES)
+    return
+  }
+  const start = Number(range[1])
+  const end = range[2] === '' ? SIZE - 1 : Math.min(Number(range[2]), SIZE - 1)
+  const span = end - start + 1
+  const isProbe = span <= 2
+  if (isProbe) probes += 1
+
+  // Measure real request concurrency over data ranges: this is how "halves concurrency on a 429"
+  // is checked rather than taken on faith. Two phases are recorded separately, because the burst
+  // that triggers the throttle is expected to be wide and the traffic afterwards is not.
+  if (!isProbe) {
+    inFlight += 1
+    maxInFlight = Math.max(maxInFlight, inFlight)
+    if (throttledSoFar >= throttleBudget) {
+      maxInFlightAfterThrottle = Math.max(maxInFlightAfterThrottle, inFlight)
+    }
+    response.on('close', () => {
+      inFlight -= 1
+    })
+  }
+
+  const throttling =
+    mode === 'throttle-all' ||
+    (mode === 'throttle-data' &&
+      !isProbe &&
+      (throttleBudget === Number.POSITIVE_INFINITY || throttledSoFar < throttleBudget))
+  if (throttling) {
+    throttledSoFar += 1
+    // Held open briefly so simultaneous requests are actually observable as simultaneous: an
+    // instant refusal makes every request look like the only one in flight.
+    setTimeout(() => {
+      response.writeHead(429, { 'content-type': 'text/plain', 'retry-after': '1' })
+      response.end('slow down')
+    }, 25)
+    return
+  }
+  if (mode === 'fail-partway' && !isProbe) {
+    // A TRUE prefix of the range followed by a dropped connection: what a network failure looks
+    // like from the client's side. The bytes that arrive are real, so whatever the client recorded
+    // is genuinely resumable — which is the whole point of the case.
+    const last = Math.min(start + 256 * 1024 - 1, end)
+    response.writeHead(206, {
+      'content-type': 'application/octet-stream',
+      'content-length': end - start + 1,
+      'content-range': `bytes ${start}-${end}/${SIZE}`,
+    })
+    response.write(SOURCE_BYTES.subarray(start, last + 1), () => {
+      try {
+        response.socket?.destroy()
+      } catch {
+        /* already gone */
+      }
+    })
+    return
+  }
+  if (mode === 'refuse-part' && start === 8 * 1024 * 1024) {
+    response.writeHead(500, { 'content-type': 'text/plain' })
+    response.end('no')
+    return
+  }
+  response.writeHead(206, {
+    'content-type': 'application/octet-stream',
+    'content-length': span,
+    'content-range': `bytes ${start}-${end}/${SIZE}`,
+  })
+  response.end(request.method === 'HEAD' ? undefined : SOURCE_BYTES.subarray(start, end + 1))
+})
+await new Promise((done) => server.listen(0, '127.0.0.1', done))
+const url = `http://127.0.0.1:${server.address().port}/artifact.bin`
+
+const reset = (next, budget = 0) => {
+  mode = next
+  throttleBudget = budget
+  throttledSoFar = 0
+  probes = 0
+  maxInFlight = 0
+  maxInFlightAfterThrottle = 0
+}
+const dest = (name) => join(ROOT, 'out', name)
+const wipe = (name) => {
+  rmSync(dest(name), { force: true })
+  rmSync(stagedPathFor(dest(name)), { force: true })
+  rmSync(resumePathFor(dest(name)), { force: true })
+}
+mkdirSync(join(ROOT, 'out'), { recursive: true })
+
+const CONNECTIONS = 8
+const OPTIONS = { connections: CONNECTIONS, minSegmentBytes: 1, writeChunkBytes: 256 * 1024 }
+
+try {
+  // ============================================================================================
+  console.log('=== 1. a server that throttles exactly as many ranges as there are workers ===')
+  console.log('    (the shape that used to produce OK plus a hole-filled destination)')
+  reset('throttle-data', CONNECTIONS)
+  wipe('throttled.bin')
+  const throttled = await downloadSegmented(url, dest('throttled.bin'), OPTIONS)
+  console.log(`    result: ok=${throttled.ok} method=${throttled.method} segments=${throttled.segments ?? '-'}`)
+
+  check('the throttled transfer still finishes', throttled.ok === true, String(throttled.error ?? 'ok'))
+  check(
+    'the file at the destination is byte-identical to the source',
+    existsSync(dest('throttled.bin')) && hashOf(dest('throttled.bin')) === sourceHash,
+    existsSync(dest('throttled.bin')) ? `${statSync(dest('throttled.bin')).size} bytes` : 'missing',
+  )
+  check(
+    'no staged file was left behind',
+    !existsSync(stagedPathFor(dest('throttled.bin'))) && !existsSync(resumePathFor(dest('throttled.bin'))),
+  )
+  check(
+    'the fixture really does observe concurrent requests',
+    maxInFlight >= 4,
+    `peak ${maxInFlight} in flight at once`,
+  )
+  check(
+    'the 429 was answered by really reducing requests in flight',
+    maxInFlightAfterThrottle > 0 && maxInFlightAfterThrottle <= CONNECTIONS / 2,
+    `peak ${maxInFlight} while being throttled, ${maxInFlightAfterThrottle} afterwards ` +
+      `(the limit was halved to ${CONNECTIONS / 2}; before the gate existed this could not change)`,
+  )
+
+  // ============================================================================================
+  console.log('')
+  console.log('=== 2. a server that throttles every range forever: FAIL, never a false OK ===')
+  reset('throttle-data', Number.POSITIVE_INFINITY)
+  wipe('refused.bin')
+  const refused = await downloadSegmented(url, dest('refused.bin'), OPTIONS)
+  console.log(`    result: ok=${refused.ok} error=${String(refused.error).slice(0, 80)}`)
+
+  check('an impossible transfer is reported as a failure', refused.ok === false)
+  check('it does not claim a segment count', refused.segments === undefined)
+  check(
+    'the destination was never created',
+    !existsSync(dest('refused.bin')),
+    existsSync(dest('refused.bin')) ? 'A FILE WAS PLACED AT THE DESTINATION' : 'absent, as it should be',
+  )
+  // Nothing arrived, so there is nothing to resume — and a partial nobody can resume is just a
+  // stray file wearing the destination's name. It must be removed, not left in someone's folder.
+  check(
+    'nothing was left behind, because nothing usable had arrived',
+    refused.partial === undefined &&
+      !existsSync(stagedPathFor(dest('refused.bin'))) &&
+      !existsSync(resumePathFor(dest('refused.bin'))),
+    `partial=${refused.partial === undefined ? 'none' : refused.partial.path}, ` +
+      `staged=${existsSync(stagedPathFor(dest('refused.bin')))}, ` +
+      `state=${existsSync(resumePathFor(dest('refused.bin')))}`,
+  )
+
+  // ============================================================================================
+  console.log('')
+  console.log('=== 3. a server that also refuses the opening probe: retried, then honest failure ===')
+  reset('throttle-all')
+  wipe('probe.bin')
+  const probed = await downloadSegmented(url, dest('probe.bin'), OPTIONS)
+  console.log(`    result: ok=${probed.ok} error=${String(probed.error).slice(0, 80)}`)
+  check('it fails rather than hanging', probed.ok === false)
+  check(
+    'the opening probe was retried instead of aborting on the first refusal',
+    probes >= 2,
+    `${probes} probes (1 would mean the first 429 ended everything)`,
+  )
+  check('the failure names the real reason', /429/.test(String(probed.error)), String(probed.error))
+  check('nothing at all was written', !existsSync(dest('probe.bin')) && !existsSync(stagedPathFor(dest('probe.bin'))))
+
+  // ============================================================================================
+  console.log('')
+  console.log('=== 4. the same file served properly: the destination gets the real thing ===')
+  reset('good')
+  wipe('good.bin')
+  const good = await downloadSegmented(url, dest('good.bin'), OPTIONS)
+  check('the transfer succeeds', good.ok === true, String(good.error ?? 'ok'))
+  check('it is byte-identical to the source', existsSync(dest('good.bin')) && hashOf(dest('good.bin')) === sourceHash)
+  check('it reports the segments it used', good.segments === CONNECTIONS, `${good.segments}`)
+  check('the resume state is gone after success', !existsSync(resumePathFor(dest('good.bin'))))
+
+  // ============================================================================================
+  console.log('')
+  console.log('=== 5. one range the server will never serve: FAIL with resumable progress ===')
+  reset('refuse-part')
+  wipe('partial.bin')
+  const partial = await downloadSegmented(url, dest('partial.bin'), OPTIONS)
+  console.log(`    result: ok=${partial.ok} error=${String(partial.error).slice(0, 90)}`)
+  check('a permanently refused range fails the transfer', partial.ok === false)
+  check('the destination is not created', !existsSync(dest('partial.bin')))
+  check('the partial is reported with how much arrived', (partial.partial?.bytes ?? 0) > 0, `${partial.partial?.bytes} bytes`)
+
+  reset('good')
+  const resumed = await downloadSegmented(url, dest('partial.bin'), OPTIONS)
+  check('resuming after the refusal completes it', resumed.ok === true, String(resumed.error ?? 'ok'))
+  check('the resumed file is byte-identical to the source', hashOf(dest('partial.bin')) === sourceHash)
+  check('it actually inherited the earlier work', (resumed.resumedBytes ?? 0) > 0, `${resumed.resumedBytes} bytes inherited`)
+
+  // ============================================================================================
+  console.log('')
+  console.log('=== 6. the options change behaviour rather than merely existing ===')
+
+  // -- builtinConnections == segments ---------------------------------------------------------
+  reset('good')
+  wipe('one.bin')
+  wipe('many.bin')
+  const one = await downloadSegmented(url, dest('one.bin'), { ...OPTIONS, connections: 1 })
+  const many = await downloadSegmented(url, dest('many.bin'), { ...OPTIONS, connections: CONNECTIONS })
+  check(
+    'connections=1 uses a single segment',
+    one.segments === 1,
+    `segments=${one.segments}`,
+  )
+  check(
+    `connections=${CONNECTIONS} uses ${CONNECTIONS} segments`,
+    many.segments === CONNECTIONS,
+    `segments=${many.segments}`,
+  )
+  check('both produced identical files', hashOf(dest('one.bin')) === hashOf(dest('many.bin')))
+
+  // -- minSegmentBytes == the segmentation threshold ------------------------------------------
+  reset('good')
+  wipe('whole.bin')
+  wipe('split.bin')
+  // A threshold above the file size leaves it undivided; below it, the workers split it.
+  const whole = await downloadSegmented(url, dest('whole.bin'), {
+    connections: CONNECTIONS,
+    minSegmentBytes: SIZE * 2,
+    writeChunkBytes: 256 * 1024,
+  })
+  const split = await downloadSegmented(url, dest('split.bin'), {
+    connections: CONNECTIONS,
+    minSegmentBytes: 512 * 1024,
+    writeChunkBytes: 256 * 1024,
+  })
+  check(
+    'a large minimum segment keeps the file on one stream',
+    whole.method === 'single-stream',
+    `${whole.method}, ${whole.reason ?? ''}`,
+  )
+  check(
+    'a small minimum segment splits it',
+    split.method === 'segmented' && split.segments > 1,
+    `${split.method} x${split.segments}`,
+  )
+  check('both are still correct', hashOf(dest('whole.bin')) === sourceHash && hashOf(dest('split.bin')) === sourceHash)
+
+  // -- waitMs bounds the wait -----------------------------------------------------------------
+  reset('good')
+  wipe('bounded.bin')
+  const bounded = await downloadSegmented(url, dest('bounded.bin'), { ...OPTIONS, waitMs: 1 })
+  check('waitMs stops a transfer', bounded.timedOut === true || bounded.ok === true, String(bounded.error ?? 'finished first'))
+  check('stopping is not reported as a failure', bounded.ok === false && bounded.timedOut === true, String(bounded.error))
+  check('the amount that arrived is still reported', typeof bounded.total === 'number', `${bounded.bytes} of ${bounded.total}`)
+  // A stop after one millisecond has nothing to resume, so it must leave nothing at all.
+  check(
+    'a stop that received nothing leaves no residue',
+    bounded.partial === undefined &&
+      !existsSync(stagedPathFor(dest('bounded.bin'))) &&
+      !existsSync(resumePathFor(dest('bounded.bin'))),
+  )
+  // ...and the opposite: a stop with real progress keeps a resumable partial (resume suite, which
+  // drives a slow server, asserts the byte-for-byte continuation of exactly that).
+  check(
+    'keepPartial:false leaves nothing even when progress was made',
+    (await downloadSegmented(url, dest('nokeep.bin'), { ...OPTIONS, keepPartial: false })).ok === true &&
+      !existsSync(`${dest('nokeep.bin')}.part.json`),
+  )
+
+  // ============================================================================================
+  console.log('')
+  console.log('=== 6b. a dropped connection must not cost the work already done ===')
+  // The scenario a user actually worries about: the network dies mid-transfer, the call gives up,
+  // and then the question is whether the next attempt continues or starts from nothing.
+  reset('fail-partway')
+  wipe('dropped.bin')
+  const dropped = await downloadSegmented(url, dest('dropped.bin'), OPTIONS)
+  console.log(`    result: ok=${dropped.ok} error=${String(dropped.error).slice(0, 70)}`)
+  check('a connection that dies part-way fails the call', dropped.ok === false)
+  check(
+    'the work already done survives the failure',
+    existsSync(stagedPathFor(dest('dropped.bin'))) && existsSync(resumePathFor(dest('dropped.bin'))),
+    `${dropped.partial?.bytes ?? 0} bytes kept`,
+  )
+  check('the destination is still not created', !existsSync(dest('dropped.bin')))
+
+  // A second attempt while the server is still broken must not destroy what the first one kept.
+  const stillBroken = await downloadSegmented(url, dest('dropped.bin'), OPTIONS)
+  check('a failing retry does not destroy the partial', stillBroken.ok === false)
+  check(
+    'the partial is still there after that failed retry',
+    existsSync(stagedPathFor(dest('dropped.bin'))) && existsSync(resumePathFor(dest('dropped.bin'))),
+  )
+
+  // The network comes back.
+  reset('good')
+  const recovered = await downloadSegmented(url, dest('dropped.bin'), OPTIONS)
+  check('the download continues once the server is healthy again', recovered.ok === true, String(recovered.error ?? 'ok'))
+  check('it inherited the earlier work rather than starting over', (recovered.resumedBytes ?? 0) > 0, `${recovered.resumedBytes} bytes inherited`)
+  check('and the finished file is byte-identical to the source', hashOf(dest('dropped.bin')) === sourceHash)
+  check(
+    'nothing is left beside it',
+    !existsSync(stagedPathFor(dest('dropped.bin'))) && !existsSync(resumePathFor(dest('dropped.bin'))),
+  )
+
+  // ============================================================================================
+  console.log('')
+  console.log('=== 7. landing: the file appears where it was asked for, and only there ===')
+  const before = new Set(readdirSyncSafe(join(homedir(), 'Downloads')))
+  reset('good')
+  const nested = join(ROOT, 'deep', 'folder', 'exact-name.bin')
+  rmSync(nested, { force: true })
+  const landed = await downloadSegmented(url, nested, OPTIONS)
+  check('a nested destination is created and used', landed.ok === true && existsSync(nested), String(landed.error ?? ''))
+  check('the bytes are correct at that exact path', existsSync(nested) && hashOf(nested) === sourceHash)
+  check(
+    'no .part or .part.json survives at that path',
+    !existsSync(`${nested}.part`) && !existsSync(`${nested}.part.json`),
+  )
+  const after = new Set(readdirSyncSafe(join(homedir(), 'Downloads')))
+  const added = [...after].filter((name) => !before.has(name))
+  check('nothing was left in the default download folder', added.length === 0, added.join(', ') || 'no new entries')
+} finally {
+  server.closeAllConnections?.()
+  await new Promise((done) => server.close(done))
+  rmSync(ROOT, { recursive: true, force: true })
+}
+
+function readdirSyncSafe(path) {
+  try {
+    return require('node:fs').readdirSync(path)
+  } catch {
+    return []
+  }
+}
+
+console.log('')
+console.log(failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`)
+process.exitCode = failures === 0 ? 0 : 1

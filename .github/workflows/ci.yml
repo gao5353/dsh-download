@@ -1,0 +1,45 @@
+# Runs the suites that need nothing but Node: no network, no Neat Download Manager, no dsh.
+#
+# Windows is where this plugin is fully supported; ubuntu is included because the built-in engine
+# claims to have no platform-specific code, and an unverified claim in a README is worth less than a
+# job that runs. The Node versions cover the declared floor (18) and the current release (22).
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  offline:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            node: 18
+          - os: windows-latest
+            node: 22
+          - os: ubuntu-latest
+            node: 22
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # No `npm install`: the plugin and every suite use Node builtins only, which is the property
+      # that makes this repository installable on a machine with no package manager at all.
+      - name: status registry
+        run: node test/status-store.mjs
+      - name: download integrity
+        run: node test/integrity.mjs
+      - name: resume
+        run: node test/resume.mjs
+      - name: leftover cleanup
+        run: node test/cleanup.mjs
+      - name: read-only endpoints
+        run: node test/ui-routes.mjs
