@@ -23,7 +23,16 @@ import { homedir } from 'node:os'
 const ROOT_LIB = new URL('../', import.meta.url).href
 
 import { createHash } from 'node:crypto'
-import { createReadStream, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  createReadStream,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -377,6 +386,14 @@ try {
   // ============================================================================================
   console.log('')
   console.log('=== 7. landing: the file appears where it was asked for, and only there ===')
+  // A reader that reports nothing can never report a leftover file, so this one is proved to be
+  // live before it is trusted. The probe goes in this suite's own scratch directory, which means
+  // the user's real download folder is never written to by a test.
+  writeFileSync(join(ROOT, 'reader-liveness-probe'), '')
+  check(
+    'the default-download-folder reader is live (a reader that sees nothing cannot fail)',
+    readdirSyncSafe(ROOT).includes('reader-liveness-probe'),
+  )
   const before = new Set(readdirSyncSafe(join(homedir(), 'Downloads')))
   reset('good')
   const nested = join(ROOT, 'deep', 'folder', 'exact-name.bin')
@@ -399,9 +416,15 @@ try {
 
 function readdirSyncSafe(path) {
   try {
-    return require('node:fs').readdirSync(path)
-  } catch {
-    return []
+    return readdirSync(path)
+  } catch (error) {
+    // A folder that does not exist is a legitimate empty result. Anything else — including a reader
+    // that is simply broken — must not be swallowed here. This helper decides whether the
+    // "nothing was left behind" assertion below can fail at all, and returning [] for a real error
+    // would quietly turn that assertion into a decoration. (It did: an earlier version of this
+    // helper called require() from an ES module, which always threw, so the check could never fail.)
+    if (error?.code === 'ENOENT') return []
+    throw error
   }
 }
 
