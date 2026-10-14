@@ -48,11 +48,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/GAO5353/dsh-download.git"
+    "url": "https://github.com/gao5353/dsh-download.git"
   },
-  "homepage": "https://github.com/GAO5353/dsh-download#readme",
+  "homepage": "https://github.com/gao5353/dsh-download#readme",
   "bugs": {
-    "url": "https://github.com/GAO5353/dsh-download/issues"
+    "url": "https://github.com/gao5353/dsh-download/issues"
   },
   "dsh": {
     "bundle": {
