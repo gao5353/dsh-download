@@ -27,6 +27,16 @@ working.
 
 ### Also in 2.0.0
 
+- **A text file is no longer mistaken for an error page.** The built-in engine refused any response
+  that arrived as `text/plain`, `application/json` or XML unless the URL ended in a document
+  extension, was offered as an attachment, or was larger than 512 KiB. Source code is exactly the
+  shape that rule rejected: an agent trying to fetch `pyinstxtractor.py` was told "the server
+  returned text/plain (17.98 KiB), not the file" for a response that was the file — while plain
+  `curl` retrieved those same bytes without complaint. The check now refuses a *page* and accepts a
+  *file*: `text/html` is refused on the label when the caller did not ask for a document, and any
+  other text-shaped response is settled by reading its opening bytes, so a mislabelled interstitial
+  page is still refused while a script, config or diff is saved. The extra kilobyte is spent only in
+  that ambiguous case, and an inconclusive look accepts rather than refuses.
 - **A partial transfer that cannot be resumed is no longer kept.** If no bytes arrived, or the
   resume state is missing or unreadable, the staged file is removed instead of being left in the
   folder wearing the destination's name. A `.part` with no `.part.json` beside it is swept on the

@@ -408,6 +408,68 @@ try {
   const after = new Set(readdirSyncSafe(join(homedir(), 'Downloads')))
   const added = [...after].filter((name) => !before.has(name))
   check('nothing was left in the default download folder', added.length === 0, added.join(', ') || 'no new entries')
+  // ============================================================================================
+  console.log('')
+  console.log('=== 8. a text file is not a page: the content-type rule, decided by bytes ===')
+  // Refusing `text/plain` refuses source code, which is a large share of what an agent downloads.
+  // That is exactly what this engine did: `pyinstxtractor.py` arrived as text/plain and was refused,
+  // while plain curl retrieved the same bytes without complaint. The rule now refuses a *page* and
+  // accepts a *file*, and the one genuinely ambiguous case — a small text body — is settled by
+  // reading its opening bytes instead of trusting the label.
+  const SOURCE_PY = '#!/usr/bin/env python3\nimport sys\n\n\ndef main():\n    print("hello")\n'
+  const PAGE_HTML = '<!doctype html>\n<html><body><h1>404 Not Found</h1></body></html>\n'
+  const CONTENT_CASES = [
+    { path: '/source.py', type: 'text/plain; charset=utf-8', body: SOURCE_PY, want: true, label: 'a Python source file is accepted' },
+    { path: '/install.sh', type: 'text/plain; charset=utf-8', body: '#!/bin/sh\nset -eu\necho hi\n', want: true, label: 'a shell script is accepted' },
+    { path: '/config.yml', type: 'text/plain; charset=utf-8', body: 'name: demo\nitems:\n  - one\n', want: true, label: 'a YAML config is accepted' },
+    { path: '/fix.diff', type: 'text/plain; charset=utf-8', body: '--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new\n', want: true, label: 'a diff is accepted' },
+    { path: '/release/artifact', type: 'text/plain; charset=utf-8', body: PAGE_HTML, want: false, label: 'a page mislabelled text/plain is refused' },
+    { path: '/release/artifact2', type: 'text/plain; charset=utf-8', body: '\uFEFF  <!DOCTYPE HTML>\n<html>', want: false, label: 'a page is caught behind a byte order mark and whitespace' },
+    { path: '/download/iso', type: 'text/html; charset=utf-8', body: PAGE_HTML, want: false, label: 'a text/html page for a non-document URL is refused' },
+    { path: '/index.html', type: 'text/html; charset=utf-8', body: PAGE_HTML, want: true, label: 'html asked for by name is still downloaded' },
+  ]
+  const contentServer = createServer((request, response) => {
+    const found = CONTENT_CASES.find((entry) => entry.path === request.url)
+    if (!found) {
+      response.writeHead(404, { 'content-type': 'text/plain' })
+      response.end('no such route')
+      return
+    }
+    const body = Buffer.from(found.body, 'utf8')
+    response.writeHead(200, {
+      'content-type': found.type,
+      'content-length': String(body.length),
+      'accept-ranges': 'bytes',
+    })
+    response.end(body)
+  })
+  await new Promise((done) => contentServer.listen(0, '127.0.0.1', done))
+  const contentBase = `http://127.0.0.1:${contentServer.address().port}`
+  for (const entry of CONTENT_CASES) {
+    const target = join(ROOT, 'content-type', entry.path.replace(/[\\/]/g, '_'))
+    rmSync(target, { force: true })
+    rmSync(stagedPathFor(target), { force: true })
+    rmSync(resumePathFor(target), { force: true })
+    const outcome = await downloadSegmented(contentBase + entry.path, target, { ...OPTIONS, connections: 1 })
+    check(
+      entry.label,
+      outcome.ok === entry.want,
+      outcome.ok ? `accepted ${outcome.bytes} bytes` : String(outcome.error ?? ''),
+    )
+    if (entry.want) {
+      check(
+        `${entry.path}: what was written is the body itself, byte for byte`,
+        existsSync(target) && readFileSync(target, 'utf8') === entry.body,
+      )
+    } else {
+      check(
+        `${entry.path}: nothing was written for the refused response`,
+        !existsSync(target) && !existsSync(`${target}.part`),
+      )
+    }
+  }
+  contentServer.closeAllConnections?.()
+  await new Promise((done) => contentServer.close(done))
 } finally {
   server.closeAllConnections?.()
   await new Promise((done) => server.close(done))
