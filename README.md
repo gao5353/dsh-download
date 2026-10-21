@@ -1,7 +1,11 @@
 # dsh-download
 
-A DeepSeek Harness bundle that adds one model-facing tool, **`download_file`**, and a download panel
-under **Settings → Plugins**.
+**A download tool for your agent that costs no tokens while it waits.**
+
+One `download_file` call awaits the whole transfer: the built-in engine segments it across parallel
+connections, resumes what a dropped connection or a restart interrupted, verifies what arrived, and
+leaves the file exactly where you asked for it — nothing else. Progress is visible in a panel under
+**Settings → Plugins**, without adding anything to the model context.
 
 The whole transfer is awaited inside a single tool call, so **waiting costs no tokens** — the tool
 returns one line. The default **built-in engine** segments the transfer across parallel connections

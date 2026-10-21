@@ -2,7 +2,7 @@
   "name": "dsh-download",
   "version": "2.0.0",
   "private": true,
-  "description": "DeepSeek Harness plugin: a download_file tool that awaits the transfer inside one tool call, so waiting costs no tokens. Built-in segmented engine, resumable downloads, and a progress panel under Settings.",
+  "description": "DeepSeek Harness plugin: download_file awaits the whole transfer inside one tool call, so waiting costs no tokens. Segmented and resumable built-in engine, checksum verification, and a live panel under Settings.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -12,6 +12,8 @@
     "./status.js": "./lib/status.js",
     "./ui-routes.js": "./lib/ui-routes.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/en.json": "./locale/en.json",
+    "./locale/zh.json": "./locale/zh.json",
     "./package.json": "./package.json"
   },
   "files": [
@@ -21,6 +23,8 @@
     "lib/status.js",
     "lib/ui-routes.js",
     "cordis.patch.yml",
+    "locale/en.json",
+    "locale/zh.json",
     "README.md",
     "README.txt",
     "INTRODUCTION.md",
@@ -41,6 +45,8 @@
     "dsh",
     "deepseek-harness",
     "dsh-plugin",
+    "cordis",
+    "plugin",
     "download",
     "downloader",
     "resumable-download",
