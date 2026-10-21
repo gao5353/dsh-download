@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="400" viewBox="0 0 900 400" role="img" aria-labelledby="title desc">
+  <title id="title">What a waiting download adds to the model context</title>
+  <desc id="desc">Awaiting the transfer inside one tool call keeps the model context flat: nothing is added while it waits, and one short result line arrives at the end. Polling a downloader's progress output adds the progress text on every poll, tens of kilobytes each time, which is thousands of tokens per poll.</desc>
+
+  <rect width="900" height="400" fill="#ffffff"/>
+  <rect x="0.5" y="0.5" width="899" height="399" fill="none" stroke="#d0d7de"/>
+
+  <text x="32" y="44" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="20" font-weight="600" fill="#1f2328">Where the tokens actually go</text>
+  <text x="32" y="70" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" fill="#656d76">The transfer is not the expensive part. Observing it is.</text>
+
+  <!-- left card -->
+  <rect x="32" y="92" width="400" height="212" rx="8" fill="#f6f8fa" stroke="#1a7f37"/>
+  <text x="56" y="122" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="600" fill="#1a7f37">await it once (this plugin)</text>
+  <g font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" fill="#1f2328">
+    <text x="56" y="152">requests for the whole transfer</text>
+    <text x="392" y="152" text-anchor="end" font-weight="600">1</text>
+    <text x="56" y="180">context added while it waits</text>
+    <text x="392" y="180" text-anchor="end" font-weight="600" fill="#1a7f37">0 tokens</text>
+    <text x="56" y="208">what arrives at the end</text>
+    <text x="392" y="208" text-anchor="end">one line</text>
+    <text x="56" y="236" fill="#656d76" font-size="12">OK 5.54 GiB -&gt; D:\models\x.gguf (built-in, x16, 113s)</text>
+    <text x="56" y="264">fixed cost of any request</text>
+    <text x="392" y="264" text-anchor="end">219 tokens (measured)</text>
+    <text x="56" y="288" fill="#656d76" font-size="12">present with or without this plugin</text>
+  </g>
+
+  <!-- right card -->
+  <rect x="468" y="92" width="400" height="212" rx="8" fill="#f6f8fa" stroke="#cf222e"/>
+  <text x="492" y="122" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="600" fill="#cf222e">poll the progress output</text>
+  <g font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" fill="#1f2328">
+    <text x="492" y="152">requests for the whole transfer</text>
+    <text x="844" y="152" text-anchor="end" font-weight="600">1 + every poll</text>
+    <text x="492" y="180">context added while it waits</text>
+    <text x="844" y="180" text-anchor="end" font-weight="600" fill="#cf222e">grows each time</text>
+    <text x="492" y="208">what each poll adds</text>
+    <text x="844" y="208" text-anchor="end">progress text</text>
+    <text x="492" y="236" fill="#656d76" font-size="12">tens of kilobytes of bar output, so thousands of tokens</text>
+    <text x="492" y="264">five polls, roughly</text>
+    <text x="844" y="264" text-anchor="end" font-weight="600">15k - 45k tokens</text>
+    <text x="492" y="288" fill="#656d76" font-size="12">on one download, before the task itself</text>
+  </g>
+
+  <g font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" fill="#656d76">
+    <text x="32" y="332">219 tokens is the measured standing cost of one request to this harness, with an unchanged tool set. It is not a</text>
+    <text x="32" y="350">saving this plugin makes; the saving is that the wait adds nothing on top of it, however large the file is.</text>
+    <text x="32" y="376">The polling figures are a range, not a single measurement: they depend on how verbose the downloader is and how</text>
+    <text x="32" y="392">often it is polled. The point is the shape — flat versus linear in the number of polls.</text>
+  </g>
+</svg>

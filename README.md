@@ -1,21 +1,34 @@
 # dsh-download
 
-**A download tool for your agent that costs no tokens while it waits.**
+**Faster downloads for your agent — and free to watch.**
 
-One `download_file` call awaits the whole transfer: the built-in engine segments it across parallel
-connections, resumes what a dropped connection or a restart interrupted, verifies what arrived, and
-leaves the file exactly where you asked for it — nothing else. Progress is visible in a panel under
-**Settings → Plugins**, without adding anything to the model context.
+One `download_file` call does the whole job. The built-in engine splits the file across parallel
+connections (measured **2.5× faster** than a single `curl` connection on the same mirror), resumes
+what a dropped connection or a restart interrupted, verifies every byte, and leaves the file exactly
+where you asked for it — nothing else. Because the transfer is awaited inside that one call,
+**watching it costs no tokens**: the tool returns a single line. Progress stays visible in a panel
+under **Settings → Plugins** without entering the model context.
 
-The whole transfer is awaited inside a single tool call, so **waiting costs no tokens** — the tool
-returns one line. The default **built-in engine** segments the transfer across parallel connections
-(measured 2.5× faster than a plain single-connection download on the same mirror), writes straight to
-the requested destination, and resumes a transfer that a dropped connection or a restart interrupted.
-**Neat Download Manager is optional**: it is there to be selected instead, not to be installed first.
+**Neat Download Manager stays optional** — it is there to be selected instead, not to be installed
+first.
 
-> **中文简介 / bilingual introduction: [INTRODUCTION.md](./INTRODUCTION.md)** — what it does, how to
-> install it, and how to use it, in Chinese and English.
-> Installing on another machine: [INSTALL.md](./INSTALL.md).
+> 中文简介：[INTRODUCTION.md](./INTRODUCTION.md) · 在别的机器上安装：[INSTALL.md](./INSTALL.md)
+
+## Measured, not asserted
+
+![The same 1.99 GiB file, one connection versus segmented](assets/speed-segments.svg)
+
+*Same file, same mirror, wall-clock time. Four to sixteen connections were 2.5–2.7× faster than one
+`curl` connection; thirty-two was **slower** than sixteen, which is why sixteen is the default.*
+
+![What a waiting download adds to the model context](assets/token-cost.svg)
+
+*Awaiting the call keeps the context flat. Polling a progress bar does not.*
+
+![One call, five steps, nothing left behind](assets/one-call.svg)
+
+*What happens inside that single call — including the staging pair that makes a resume possible, and
+that a successful transfer removes.*
 
 ## The problem it solves
 

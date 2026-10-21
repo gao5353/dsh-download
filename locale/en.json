@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "download",
-    "description": "Zero-token file downloads: one tool call awaits the transfer, segments it across connections, resumes what was interrupted, and leaves nothing behind."
+    "title": "fast download",
+    "description": "Speed up file downloads: several connections share the transfer, a dropped connection resumes where it stopped, and waiting inside one call costs no tokens."
   }
 }

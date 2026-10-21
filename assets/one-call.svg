@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="380" viewBox="0 0 900 380" role="img" aria-labelledby="title desc">
+  <title id="title">One tool call, five steps, nothing left behind</title>
+  <desc id="desc">The agent issues one download_file call. The engine probes the URL with a two byte range request, transfers with several connections writing one mebibyte chunks into a staging file, verifies that every segment arrived, then renames the staging file to the requested destination and deletes its state file. A stopped transfer leaves a staging pair that a later call resumes.</desc>
+
+  <rect width="900" height="380" fill="#ffffff"/>
+  <rect x="0.5" y="0.5" width="899" height="379" fill="none" stroke="#d0d7de"/>
+
+  <text x="32" y="44" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="20" font-weight="600" fill="#1f2328">One call, five steps, nothing left behind</text>
+  <text x="32" y="70" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" fill="#656d76">The agent asks once and looks away. Everything below happens inside that single call.</text>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#656d76"/>
+    </marker>
+  </defs>
+
+  <g font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
+    <!-- box 1 -->
+    <rect x="25" y="104" width="150" height="86" rx="8" fill="#f6f8fa" stroke="#0969da"/>
+    <text x="100" y="130" text-anchor="middle" font-size="13" font-weight="600" fill="#0969da">one tool call</text>
+    <text x="100" y="152" text-anchor="middle" font-size="11" fill="#1f2328">download_file</text>
+    <text x="100" y="170" text-anchor="middle" font-size="11" fill="#656d76">awaits the whole thing</text>
+
+    <!-- box 2 -->
+    <rect x="200" y="104" width="150" height="86" rx="8" fill="#f6f8fa" stroke="#d0d7de"/>
+    <text x="275" y="130" text-anchor="middle" font-size="13" font-weight="600" fill="#1f2328">probe</text>
+    <text x="275" y="152" text-anchor="middle" font-size="11" fill="#1f2328">Range: bytes=0-1</text>
+    <text x="275" y="170" text-anchor="middle" font-size="11" fill="#656d76">size, ranges, type</text>
+
+    <!-- box 3 -->
+    <rect x="375" y="104" width="150" height="86" rx="8" fill="#f6f8fa" stroke="#d0d7de"/>
+    <text x="450" y="130" text-anchor="middle" font-size="13" font-weight="600" fill="#1f2328">segment</text>
+    <text x="450" y="152" text-anchor="middle" font-size="11" fill="#1f2328">N connections</text>
+    <text x="450" y="170" text-anchor="middle" font-size="11" fill="#656d76">1 MiB coalesced writes</text>
+
+    <!-- box 4 -->
+    <rect x="550" y="104" width="150" height="86" rx="8" fill="#f6f8fa" stroke="#d0d7de"/>
+    <text x="625" y="130" text-anchor="middle" font-size="13" font-weight="600" fill="#1f2328">verify</text>
+    <text x="625" y="152" text-anchor="middle" font-size="11" fill="#1f2328">every byte present</text>
+    <text x="625" y="170" text-anchor="middle" font-size="11" fill="#656d76">a hole fails the call</text>
+
+    <!-- box 5 -->
+    <rect x="725" y="104" width="150" height="86" rx="8" fill="#f6f8fa" stroke="#1a7f37"/>
+    <text x="800" y="130" text-anchor="middle" font-size="13" font-weight="600" fill="#1a7f37">land</text>
+    <text x="800" y="152" text-anchor="middle" font-size="11" fill="#1f2328">rename to dest</text>
+    <text x="800" y="170" text-anchor="middle" font-size="11" fill="#656d76">staging pair removed</text>
+
+    <!-- arrows -->
+    <line x1="175" y1="147" x2="196" y2="147" stroke="#656d76" marker-end="url(#arrow)"/>
+    <line x1="350" y1="147" x2="371" y2="147" stroke="#656d76" marker-end="url(#arrow)"/>
+    <line x1="525" y1="147" x2="546" y2="147" stroke="#656d76" marker-end="url(#arrow)"/>
+    <line x1="700" y1="147" x2="721" y2="147" stroke="#656d76" marker-end="url(#arrow)"/>
+
+    <!-- staging pair -->
+    <rect x="375" y="222" width="325" height="56" rx="8" fill="#ffffff" stroke="#8250df" stroke-dasharray="5 4"/>
+    <text x="537" y="244" text-anchor="middle" font-size="12" font-weight="600" fill="#8250df">staging pair, only while in flight</text>
+    <text x="537" y="264" text-anchor="middle" font-size="11" fill="#1f2328">&lt;dest&gt;.part   +   &lt;dest&gt;.part.json</text>
+    <line x1="450" y1="190" x2="500" y2="220" stroke="#8250df" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+
+    <text x="375" y="300" font-size="11" fill="#656d76">A failed or stopped transfer keeps this pair so the next call resumes;</text>
+    <text x="375" y="316" font-size="11" fill="#656d76">a successful one deletes it, so the folder holds the file and nothing else.</text>
+  </g>
+
+  <g font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11" fill="#656d76">
+    <text x="25" y="252">Throttled or refused?</text>
+    <text x="25" y="268">Workers back off and</text>
+    <text x="25" y="284">halve the connection</text>
+    <text x="25" y="300">count instead of failing,</text>
+    <text x="25" y="316">and a 429 is retried</text>
+    <text x="25" y="332">with a widening delay.</text>
+  </g>
+</svg>

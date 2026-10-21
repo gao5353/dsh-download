@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="430" viewBox="0 0 900 430" role="img" aria-labelledby="title desc">
+  <title id="title">Measured download time on the same 1.99 GiB file</title>
+  <desc id="desc">One curl connection took 92.1 seconds. The built-in engine with one connection took 180.0 seconds, with four connections 34.8 seconds, with sixteen 36.5 seconds, and with thirty-two 52.7 seconds. Four to sixteen connections are 2.5 to 2.7 times faster than a single curl connection; thirty-two connections is slower than sixteen.</desc>
+
+  <rect width="900" height="430" fill="#ffffff"/>
+  <rect x="0.5" y="0.5" width="899" height="429" fill="none" stroke="#d0d7de"/>
+
+  <text x="32" y="44" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="20" font-weight="600" fill="#1f2328">Same file, same mirror: 1.99 GiB from TUNA</text>
+  <text x="32" y="70" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" fill="#656d76">Wall-clock time to completion. Lower is better. Each bar is one measured run.</text>
+
+  <g font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="14">
+    <!-- curl -->
+    <text x="32" y="116" fill="#1f2328">curl, 1 connection</text>
+    <rect x="210" y="102" width="266" height="22" rx="3" fill="#afb8c1"/>
+    <text x="488" y="118" fill="#1f2328" font-weight="600">92.1 s</text>
+    <text x="556" y="118" fill="#656d76">baseline 1.00×</text>
+
+    <!-- 1 -->
+    <text x="32" y="158" fill="#1f2328">engine, 1 connection</text>
+    <rect x="210" y="144" width="520" height="22" rx="3" fill="#d0d7de"/>
+    <text x="742" y="160" fill="#1f2328" font-weight="600">180.0 s</text>
+    <text x="810" y="160" fill="#cf222e">0.51×</text>
+
+    <!-- 4 -->
+    <text x="32" y="200" fill="#1f2328">engine, 4 connections</text>
+    <rect x="210" y="186" width="101" height="22" rx="3" fill="#1a7f37"/>
+    <text x="323" y="202" fill="#1a7f37" font-weight="600">34.8 s</text>
+    <text x="386" y="202" fill="#1a7f37" font-weight="600">2.65× faster</text>
+
+    <!-- 16 -->
+    <text x="32" y="242" fill="#1f2328">engine, 16 connections</text>
+    <rect x="210" y="228" width="105" height="22" rx="3" fill="#1a7f37"/>
+    <text x="327" y="244" fill="#1a7f37" font-weight="600">36.5 s</text>
+    <text x="390" y="244" fill="#1a7f37" font-weight="600">2.52× faster</text>
+    <text x="500" y="244" fill="#656d76">default</text>
+
+    <!-- 32 -->
+    <text x="32" y="284" fill="#1f2328">engine, 32 connections</text>
+    <rect x="210" y="270" width="152" height="22" rx="3" fill="#bf8700"/>
+    <text x="374" y="286" fill="#bf8700" font-weight="600">52.7 s</text>
+    <text x="437" y="286" fill="#bf8700">1.75× — slower than 16</text>
+  </g>
+
+  <line x1="210" y1="306" x2="870" y2="306" stroke="#d0d7de"/>
+
+  <g font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" fill="#656d76">
+    <text x="32" y="332">Why one connection is slower than curl: the engine writes through a positional ring and coalesces 1 MiB chunks,</text>
+    <text x="32" y="350">which costs a little on a single stream and pays off as soon as there are several.</text>
+    <text x="32" y="376">Why 32 is worse than 16: past the mirror's per-connection comfort zone the requests queue, so more connections</text>
+    <text x="32" y="394">spend more time waiting. Sixteen is the shipped default.</text>
+  </g>
+</svg>
