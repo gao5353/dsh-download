@@ -5,6 +5,31 @@ breaking change for an existing installation bumps the major version.
 
 ## Unreleased
 
+- **`mirrors`: ranges spread across several mirrors carrying the same file.** A single host caps a
+  transfer twice — per connection, and per mirror, where no number of connections gets past the
+  second cap. Passing `mirrors: [...]` splits the ranges across all of them, which is the only thing
+  that helps when the host itself is the ceiling.
+
+  The safety rule is the feature: a mirror must **prove** it serves identical bytes before a single
+  range is trusted to it. Mixing two builds produces a file that passes every later check — right
+  size, every segment complete — while holding bytes from two different files, so the size is
+  compared exactly and three 32 KiB windows (start, middle, end) are hashed on both sides. The middle
+  window is what catches a rebuild that keeps its header. A mirror that fails is refused and **named
+  in the result** with the reason, rather than silently ignored; a mirror that keeps failing
+  mid-transfer is dropped from the rotation after two strikes, and the primary URL always remains as
+  the fallback. Without `mirrors` nothing changes at all.
+
+  New suite `test/multisource.mjs`: both mirrors carrying data, a middle-byte mismatch refused, a size
+  mismatch refused, a flaky mirror dropped mid-transfer, and the unchanged single-source case. A live
+  check against two public Ubuntu mirrors (TUNA and USTC, 2.14 GB, declared size identical, three
+  sampled windows hashing equal) accepted both and spread ranges across them.
+
+  **Measured on this machine, and it did not speed anything up:** 1, 2, 3 and 4 mirrors all landed
+  between 2.0 and 2.7 MiB/s across two passes, with a single-stream `curl` control at 2.24 MiB/s —
+  the link itself was the ceiling, so the mirrors had nothing to add. The feature is shipped for the
+  case it was built for, a *host* that caps per mirror; this connection could not demonstrate that
+  case, and the honest note is here rather than a speed claim in the README.
+
 - **A connection that goes silent is abandoned and retried instead of held forever.** A mirror that
   answered a range request with headers and then sent nothing left the call sitting at a fully
   preallocated destination with no error and no progress; nothing in the engine bounded that silence,

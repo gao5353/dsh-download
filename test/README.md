@@ -14,6 +14,8 @@
 #                                behaviour rather than merely existing
 #   node test/resume.mjs         an interrupted transfer continues from the byte it stopped at and
 #                                ends byte-identical to the source
+#   node test/multisource.mjs    ranges spread across mirrors, and every mirror that does not prove
+#                                it serves identical bytes is refused instead of trusted
 #   node test/cleanup.mjs        what a stopped transfer leaves behind, and what it must not
 #   node test/ui-routes.mjs      the read-only HTTP endpoints: loopback gating, method gating,
 #                                dispatch, and that a broken dependency cannot take the host down

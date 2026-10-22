@@ -129,6 +129,7 @@ says `builtin`, so it works as a per-call override without changing the machine-
 | `dest` | no | Destination file path or directory. Omitted → the file stays where the downloader put it. |
 | `force` | no | Route through Neat Download Manager even below the size threshold. |
 | `waitSeconds` | no | Cap the wait. Omit to wait until the transfer finishes; set a small value to stop early and continue later. Applies to **both** engines, and with the built-in engine stopping is cheap: partial work is kept and resumed. |
+| `mirrors` | no | Other URLs carrying **the same file**. Ranges are spread across all of them, which is what helps when a single host is the ceiling. See below. |
 
 Returns exactly one of:
 
@@ -141,6 +142,42 @@ TIMEOUT still downloading: built-in engine reached 879.00 MiB of 1.99 GiB in 15s
 TIMEOUT still downloading: NDM task <id>, <size> received so far.
 FAIL <reason>
 ```
+
+## Many mirrors, one file
+
+A single host caps a transfer twice: **per connection**, and **per mirror** — a server-side limit no
+number of connections gets past. Spreading ranges across several mirrors that carry the same file
+gets past the second cap, and that is the only lever that works when the host itself is the ceiling.
+
+```
+download_file(url: "https://mirror-a/…/model.gguf",
+              mirrors: ["https://mirror-b/…/model.gguf",
+                        "https://mirror-c/…/model.gguf"],
+              dest: "D:/models/model.gguf")
+```
+
+**Every mirror has to prove it serves the same bytes before a single range is trusted to it.** Mixing
+two builds yields a file that passes every later check — right size, every segment "complete" — while
+containing bytes from two different files, so the check happens first and is not optional:
+
+1. the declared size must equal the primary's, exactly;
+2. three 32 KiB windows — start, middle, and end — are fetched from the primary **and** the candidate
+   and hashed; all three must match. The middle window is what catches a rebuild that keeps its
+   header.
+
+A mirror that fails either test is **refused and named in the result**, never used and never silently
+ignored:
+
+```
+OK 5.88 GiB -> D:\models\model.gguf (built-in, segmented x16, 2 mirrors, resumed from 12%, 118s)
+FAIL … sources refused: mirror-c: bytes at offset 4177920 differ from the primary
+```
+
+What this does **not** do: it does not mix different files, it does not help when your own line is the
+limit (16 connections already could not beat that), and it is not a substitute for a checksum when you
+have one. Costs: one probe plus three small requests per mirror before the transfer starts, and a
+mirror that keeps failing is dropped from the rotation after two strikes — the first URL always stays
+as the fallback.
 
 ## Resuming an interrupted download
 

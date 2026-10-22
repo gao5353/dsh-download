@@ -39,6 +39,8 @@ jobs:
         run: node test/integrity.mjs
       - name: resume
         run: node test/resume.mjs
+      - name: multiple mirrors
+        run: node test/multisource.mjs
       - name: leftover cleanup
         run: node test/cleanup.mjs
       - name: read-only endpoints
