@@ -470,6 +470,131 @@ try {
   }
   contentServer.closeAllConnections?.()
   await new Promise((done) => contentServer.close(done))
+
+  // ============================================================================================
+  console.log('')
+  console.log('=== 9. a connection that goes silent is retried, not waited on forever ===')
+  // Observed on a real machine: a mirror answered the range request with headers and then sent
+  // nothing, and because nothing in the engine bounded that silence the call sat at a full
+  // preallocated size with no error and no progress until it was killed by hand. These two servers
+  // cover both halves of the fix — the one that never recovers must fail promptly and say why, and
+  // the one that recovers on the retry must still produce a correct file.
+  const SILENT_BYTES = Buffer.alloc(3 * 1024 * 1024, 9)
+  const stalledRanges = new Set()
+  let silentServerRequests = 0
+  const silentServer = createServer((request, response) => {
+    const match = /bytes=(\d+)-(\d+)?/.exec(request.headers.range ?? '')
+    if (match === null) {
+      // The opening probe is answered normally, so the transfer gets as far as a real range request.
+      response.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': String(SILENT_BYTES.length) })
+      response.end(SILENT_BYTES)
+      return
+    }
+    silentServerRequests += 1
+    const start = Number(match[1])
+    const end = Number(match[2] ?? SILENT_BYTES.length - 1)
+    // The opening probe asks for two bytes and must be answered, or the engine never reaches the
+    // worker whose stall timer this section is about.
+    if (start === 0 && end === 1) {
+      response.writeHead(206, {
+        'content-type': 'application/octet-stream',
+        'content-length': '2',
+        'content-range': `bytes 0-1/${SILENT_BYTES.length}`,
+      })
+      response.end(SILENT_BYTES.subarray(0, 2))
+      return
+    }
+    response.writeHead(206, {
+      'content-type': 'application/octet-stream',
+      'content-length': String(end - start + 1),
+      'content-range': `bytes ${start}-${end}/${SILENT_BYTES.length}`,
+    })
+    // Serve the first range request for a segment properly and stall every retry: the transfer can
+    // only finish if a stalled attempt is abandoned and then retried.
+    if (!stalledRanges.has(start)) return
+    // Headers already sent; deliberately send no body and never end the response.
+  })
+  await new Promise((done) => silentServer.listen(0, '127.0.0.1', done))
+  const silentBase = `http://127.0.0.1:${silentServer.address().port}`
+
+  const stallTarget = join(ROOT, 'stall', 'silent.bin')
+  rmSync(stallTarget, { force: true })
+  const stallStarted = Date.now()
+  const stallOutcome = await downloadSegmented(`${silentBase}/silent.bin`, stallTarget, {
+    ...OPTIONS,
+    connections: 1,
+    minSegmentBytes: 1024 * 1024,
+    stallMs: 300,
+    maxRetries: 0,
+  })
+  const stallSeconds = (Date.now() - stallStarted) / 1000
+  check('a transfer that never receives a byte fails instead of hanging', stallOutcome.ok === false)
+  check(
+    'the failure names the silence rather than a bare AbortError',
+    /no bytes for \d+(?:ms|s)/.test(String(stallOutcome.error ?? '')),
+    String(stallOutcome.error ?? 'no error reported'),
+  )
+  check('it gives up in seconds, not never', stallSeconds < 15, `${stallSeconds.toFixed(1)}s`)
+
+  // Now the recovering shape: every retry stalls, but the first attempt for each range delivers.
+  stalledRanges.clear()
+  const recoveryServer = createServer((request, response) => {
+    const match = /bytes=(\d+)-(\d+)?/.exec(request.headers.range ?? '')
+    if (match === null) {
+      response.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': String(SILENT_BYTES.length) })
+      response.end(SILENT_BYTES)
+      return
+    }
+    const start = Number(match[1])
+    const end = Number(match[2] ?? SILENT_BYTES.length - 1)
+    if (start === 0 && end === 1) {
+      response.writeHead(206, {
+        'content-type': 'application/octet-stream',
+        'content-length': '2',
+        'content-range': `bytes 0-1/${SILENT_BYTES.length}`,
+      })
+      response.end(SILENT_BYTES.subarray(0, 2))
+      return
+    }
+    // Every request stalls once. A retry of the same range is served, which is what the stall timer
+    // is supposed to make possible.
+    const key = `${start}`
+    const first = !stalledRanges.has(key)
+    stalledRanges.add(key)
+    response.writeHead(206, {
+      'content-type': 'application/octet-stream',
+      'content-length': String(end - start + 1),
+      'content-range': `bytes ${start}-${end}/${SILENT_BYTES.length}`,
+    })
+    if (first) return // silent this time
+    response.end(SILENT_BYTES.subarray(start, end + 1))
+  })
+  await new Promise((done) => recoveryServer.listen(0, '127.0.0.1', done))
+  const recoveryBase = `http://127.0.0.1:${recoveryServer.address().port}`
+  const recoveryTarget = join(ROOT, 'stall', 'recovered.bin')
+  rmSync(recoveryTarget, { force: true })
+  const recovery = await downloadSegmented(`${recoveryBase}/recovered.bin`, recoveryTarget, {
+    ...OPTIONS,
+    connections: 1,
+    minSegmentBytes: 1024 * 1024,
+    stallMs: 300,
+    maxRetries: 4,
+  })
+  check('a range that stalls once still completes on its retry', recovery.ok === true, String(recovery.error ?? 'ok'))
+  check(
+    'and the recovered file is byte-identical to the source',
+    existsSync(recoveryTarget) && readFileSync(recoveryTarget).equals(SILENT_BYTES),
+  )
+  check(
+    'the stall produced real retries rather than a single abandoned attempt',
+    silentServerRequests >= 2 && stalledRanges.size >= 1,
+    `${silentServerRequests} requests, ${stalledRanges.size} ranges`,
+  )
+
+  silentServer.closeAllConnections?.()
+  await new Promise((done) => silentServer.close(done))
+  recoveryServer.closeAllConnections?.()
+  await new Promise((done) => recoveryServer.close(done))
 } finally {
   server.closeAllConnections?.()
   await new Promise((done) => server.close(done))

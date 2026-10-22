@@ -3,6 +3,30 @@
 Notable changes, newest first. This project follows [semantic versioning](https://semver.org): a
 breaking change for an existing installation bumps the major version.
 
+## Unreleased
+
+- **A connection that goes silent is abandoned and retried instead of held forever.** A mirror that
+  answered a range request with headers and then sent nothing left the call sitting at a fully
+  preallocated destination with no error and no progress; nothing in the engine bounded that silence,
+  so the only way out was to kill it. Every range request now has its own timer (`stallMs`, default
+  60 s, reset whenever bytes arrive, `0` disables), including the opening probe — which is the first
+  request of a call and therefore the first place a silent server could hang it. A real stall is
+  retried like any other failure, and if it never recovers the result says which range went quiet for
+  how long instead of surfacing a bare `AbortError`. `waitMs` still stops the transfer, but it no
+  longer aborts the probe: doing so meant the result could not report the file's size, and a stop
+  that cannot say how much is left is less useful than one that waits for the answer.
+- **One less copy of every byte.** Each body chunk was duplicated before being coalesced into a
+  write; it is now handed on as a view, so the engine pays for one pass over the data instead of two.
+  This is a strict reduction in work, but the measured effect sits inside the noise of the local
+  benchmark (±10–20 % between identical runs), so it ships for the work it removes rather than for a
+  number it cannot honestly demonstrate.
+- **A note on the 2.5× figure.** It comes from one measured pair of runs on one mirror (TUNA, 1.94
+  GiB): one `curl` connection at 22.1 MiB/s, four to sixteen engine connections at 55–59 MiB/s. The
+  engine's own local ceiling measured 140–280 MiB/s on the same machine, so on that mirror the
+  source, not the engine, set the limit — more connections help only until the source saturates, and
+  past that they hurt (32 connections measured slower than 16). Re-measuring was attempted and
+  abandoned: with a VPN in the path every source fell to 1.5–2.8 MiB/s, which measures the VPN.
+
 ## 2.0.0 — the package is renamed to `dsh-download`
 
 **Breaking, and the reason for the major version.** The plugin started life as `dsh-ndm-download`,

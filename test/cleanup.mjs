@@ -1,13 +1,13 @@
 /**
  * Leftover tests: nothing this plugin creates should survive its welcome.
  *
- * The complaint this exists for is concrete 鈥?a folder that contained a finished download also
+ * The complaint this exists for is concrete — a folder that contained a finished download also
  * contained a `.part` file from some other attempt, and there is no way for a person to know which
  * of the two is safe to delete. The rule now is that a partial is kept only while it can actually
  * be resumed, and that a pair too old to matter is swept on the next start.
  *
  * Fixtures are built in a temporary directory, and every assertion is about a specific path this
- * plugin wrote 鈥?never about a folder's contents in general, because a folder is the user's.
+ * plugin wrote — never about a folder's contents in general, because a folder is the user's.
  */
 
 // Resolved from this file's own location, so a cloned copy runs anywhere.
@@ -119,7 +119,7 @@ try {
   console.log('=== a transfer killed by a restart keeps a fresh, resumable partial ===')
   // The real shape of the case a user cares about: the previous process was killed mid-transfer, so
   // the mirror file still calls it `active`. Starting up re-records it as interrupted, and the pair
-  // it left must survive that 鈥?this is precisely what makes a resume possible afterwards. (An
+  // it left must survive that — this is precisely what makes a resume possible afterwards. (An
   // entry cannot be "in flight" during a startup sweep for the same reason: nothing is running yet.)
   dest = fixture('restart-killed', { ageDays: 0 })
   const activeDocument = JSON.parse(readFileSync(process.env.DSH_NDM_STATUS, 'utf8'))
